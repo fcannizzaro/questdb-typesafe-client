@@ -25,7 +25,7 @@ function initOrama() {
 export default function DefaultSearchDialog(props: SharedProps) {
   const { locale } = useI18n(); // (optional) for i18n
   const { search, setSearch, query } = useDocsSearch({
-    from: "/questdb-typesafe-client/docs/api/search",
+    from: "/questdb-typesafe-client/api/search",
     type: 'static',
     initOrama,
     locale,
