@@ -1,0 +1,185 @@
+---
+title: Query Builders
+description: Build type-safe SELECT, INSERT, UPDATE queries and drop partitions.
+---
+
+## Overview
+
+Query builders are accessed via a `Table` instance. All builders generate SQL and can either preview it with `.toSQL()` or execute it with `.execute()`.
+
+```typescript
+const db = new QuestDBClient({ host: "localhost" });
+const table = db.table(energyReadings);
+
+// All queries start from the table
+table.select()   // SELECT builder
+table.insert()   // INSERT builder
+table.update()   // UPDATE builder
+table.deletePartition()   // Drop partitions
+```
+
+## SELECT
+
+The `SelectBuilder` is **immutable** — every method returns a new builder instance.
+
+### Column Selection
+
+```typescript
+// Select all columns
+table.select()
+
+// Select specific columns (narrows result type)
+table.select("source", "power_kw")
+
+// Add expressions
+table.select().addExpr(fn.count(undefined, "total"))
+
+// DISTINCT
+table.select().distinct()
+```
+
+### WHERE
+
+The `where` callback provides typed column expressions:
+
+```typescript
+table.select()
+  .where((c) => c.source.eq("solar"))
+
+// Combine with AND / OR / NOT
+table.select()
+  .where((c) => and(c.source.eq("solar"), c.power_kw.gt(50)))
+
+table.select()
+  .where((c) => or(c.source.eq("solar"), c.source.eq("wind")))
+
+table.select()
+  .where((c) => not(c.meter_active.eq(false)))
+```
+
+Append additional conditions with `andWhere`:
+
+```typescript
+table.select()
+  .where((c) => c.source.eq("solar"))
+  .andWhere((c) => c.power_kw.gt(100))
+```
+
+### Column Operators
+
+All operators are type-safe — they only accept the column's inferred TypeScript type.
+
+| Operator              | SQL                           |
+| --------------------- | ----------------------------- |
+| `col.eq(value)`       | `column = value`              |
+| `col.neq(value)`      | `column != value`             |
+| `col.gt(value)`       | `column > value`              |
+| `col.gte(value)`      | `column >= value`             |
+| `col.lt(value)`       | `column < value`              |
+| `col.lte(value)`      | `column <= value`             |
+| `col.in([v1, v2])`   | `column IN (v1, v2)`         |
+| `col.between(lo, hi)` | `column BETWEEN lo AND hi`   |
+| `col.like(pattern)`   | `column LIKE pattern`         |
+| `col.matches(regex)`  | `column ~ regex`              |
+| `col.isNull()`        | `column IS NULL`              |
+| `col.isNotNull()`     | `column IS NOT NULL`          |
+| `col.ref()`           | `column` (bare reference)     |
+
+### ORDER BY, LIMIT, GROUP BY
+
+```typescript
+table.select()
+  .orderBy("power_kw", "DESC")   // default is ASC
+  .limit(100)                  // LIMIT 100
+  .limit(100, 50)             // LIMIT 100, 50 (count, offset)
+  .groupBy("source")          // GROUP BY source
+  .groupBy("source", "reading")  // multiple columns
+```
+
+### Execution
+
+```typescript
+// Execute and get typed results
+const rows = await table.select().execute();
+
+// Get first result or null (adds LIMIT 1)
+const first = await table.select().first();
+
+// Preview SQL without executing
+const sql = table.select().toSQL();
+```
+
+## INSERT
+
+The `InsertBuilder` is **mutable** — methods modify the builder in place.
+
+```typescript
+// Single row
+await table
+  .insert({ meter_active: true, source: "solar", reading: "produced", power_kw: 48.7, energy_kwh: 312.5 })
+  .execute();
+
+// Batch insert
+await table
+  .insert([
+    { meter_active: true, source: "wind", reading: "produced", power_kw: 120.3, energy_kwh: 890.1 },
+    { meter_active: true, source: "solar", reading: "consumed", power_kw: 5.2, energy_kwh: 41.6 },
+  ])
+  .execute();
+```
+
+**Insert type rules:**
+- Designated timestamp columns are **optional** (server auto-assigns)
+- Non-nullable types (`boolean`, `byte`, `short`) are **required**
+- All nullable columns are **optional** and accept `null`
+- `undefined` values are excluded from the generated SQL
+- Returns `{ count: number }` on execute
+
+### Chaining
+
+```typescript
+await table
+  .insert({ meter_active: true, source: "solar", reading: "produced", power_kw: 48.7 })
+  .values({ meter_active: true, source: "wind", reading: "produced", power_kw: 120.3 })
+  .execute();
+```
+
+## UPDATE
+
+The `UpdateBuilder` is **mutable**.
+
+```typescript
+await table
+  .update()
+  .set({ power_kw: 52.3, meter_active: false })
+  .where((c) => c.source.eq("solar"))
+  .execute();
+// Returns { updated: number }
+```
+
+The designated timestamp column is excluded from the update type — QuestDB does not allow updating designated timestamps.
+
+### UPDATE ... FROM
+
+QuestDB-specific syntax for updating from another table:
+
+```typescript
+await table
+  .update()
+  .set({ power_kw: 52.3 })
+  .from(otherTable, "o")
+  .where((c) => c.source.eq("solar"))
+  .execute();
+```
+
+## Delete Partition
+
+QuestDB does not support row-level `DELETE`. Instead, you can drop entire partitions with `deletePartition()`. It accepts a single partition key or an array of keys.
+
+```typescript
+// Drop a single partition
+await table.deletePartition("2026-01-15");
+
+// Drop multiple partitions at once
+await table.deletePartition(["2026-01-15", "2026-01-16"]);
+```

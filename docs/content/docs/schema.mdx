@@ -1,0 +1,222 @@
+---
+title: Schema Definition
+description: Define type-safe table schemas with column types, partitioning, WAL, and more.
+---
+
+## Defining a Table
+
+Use `defineTable` with the `q` column builder to define typed table schemas:
+
+```typescript
+import { defineTable, q } from "@fcannizzaro/questdb-typesafe-client";
+
+const sensors = defineTable({
+  name: "sensors",
+  columns: {
+    ts: q.timestamp.designated(),
+    device_id: q.symbol(),
+    temperature: q.double(),
+    humidity: q.float(),
+    label: q.varchar(),
+    active: q.boolean(),
+  },
+  partitionBy: "DAY",
+  wal: true,
+});
+```
+
+## Defining a Table from a Zod Schema
+
+As an alternative to `columns`, you can pass a Zod v4 object schema directly. Use `.meta()` annotations on individual fields for QuestDB-specific type overrides:
+
+```typescript
+import { defineTable } from "@fcannizzaro/questdb-typesafe-client";
+import { z } from "zod/v4";
+
+const energyReadings = defineTable({
+  name: "energy_readings",
+  schema: z.object({
+    ts: z.date().meta({ designated: true }),
+    source: z.string().meta({ symbol: true }),
+    reading: z.string().meta({ symbol: true }),
+    power_kw: z.number(),
+    energy_kwh: z.number(),
+    meter_active: z.boolean(),
+  }),
+  partitionBy: "DAY",
+  wal: true,
+});
+```
+
+### Default Type Mapping
+
+Zod types are automatically mapped to QuestDB column types:
+
+| Zod Type       | Default QDB Type | Meta Override                           |
+| -------------- | ---------------- | --------------------------------------- |
+| `z.boolean()`  | BOOLEAN          | —                                       |
+| `z.number()`   | DOUBLE           | `.meta({ int: true })` for INT, `.meta({ float: true })` for FLOAT |
+| `z.string()`   | VARCHAR          | `.meta({ symbol: true })` for SYMBOL   |
+| `z.date()`     | TIMESTAMP        | `.meta({ designated: true })` for designated timestamp |
+| `z.bigint()`   | LONG             | —                                       |
+
+Wrapper types like `.optional()` and `.nullable()` are automatically unwrapped to determine the base QuestDB type.
+
+### `.meta()` Annotations
+
+Use the `QuestDBColumnMeta` fields in `.meta()` calls:
+
+```typescript
+import type { QuestDBColumnMeta } from "@fcannizzaro/questdb-typesafe-client";
+
+z.date().meta({ designated: true })   // designated timestamp (required for partitioned tables)
+z.string().meta({ symbol: true })     // SYMBOL instead of VARCHAR
+z.number().meta({ int: true })        // INT instead of DOUBLE
+z.number().meta({ float: true })      // FLOAT instead of DOUBLE
+```
+
+> When using `schema`, the designated timestamp compile-time check is not enforced — `.meta()` annotations are invisible to the TypeScript type system. The runtime conversion handles them correctly. Use the `columns` approach with `q.timestamp.designated()` if you need compile-time designated timestamp validation.
+
+## Table Options
+
+| Option                | Type           | Default  | Description                                       |
+| --------------------- | -------------- | -------- | ------------------------------------------------- |
+| `name`                | `string`       | required | Table name                                        |
+| `columns`             | `object`       | —        | Column definitions using `q.*` builders           |
+| `schema`              | `z.ZodObject`  | —        | Zod v4 object schema (alternative to `columns`)   |
+| `partitionBy`         | `PartitionBy`  | `"DAY"`  | `NONE`, `HOUR`, `DAY`, `WEEK`, `MONTH`, `YEAR`   |
+| `wal`                 | `boolean`      | `true`   | Enable Write-Ahead Log                            |
+| `dedupKeys`           | `string[]`     | —        | Deduplication upsert keys (requires WAL)          |
+| `ttl`                 | `string`       | —        | Partition TTL (e.g. `"90d"`)                      |
+| `maxUncommittedRows`  | `number`       | —        | Max uncommitted rows before flush                 |
+| `o3MaxLag`            | `string`       | —        | Out-of-order commit lag (e.g. `"1s"`)             |
+
+> `columns` and `schema` are mutually exclusive — provide one or the other, not both.
+
+### Designated Timestamp
+
+QuestDB requires a designated timestamp column for partitioned tables. The library enforces this at the type level — a compile error occurs if `partitionBy` is not `"NONE"` and no designated timestamp is defined.
+
+```typescript
+// This compiles
+const valid = defineTable({
+  name: "t",
+  columns: { ts: q.timestamp.designated(), v: q.double() },
+  partitionBy: "DAY",
+});
+
+// This produces a type error
+const invalid = defineTable({
+  name: "t",
+  columns: { v: q.double() },
+  partitionBy: "DAY", // Error: partitioned table requires a designated timestamp
+});
+```
+
+### Deduplication
+
+When using WAL mode, you can configure upsert deduplication keys:
+
+```typescript
+const sensors = defineTable({
+  name: "sensors",
+  columns: {
+    ts: q.timestamp.designated(),
+    reading_id: q.uuid(),
+    source: q.symbol(),
+    power_kw: q.double(),
+  },
+  wal: true,
+  dedupKeys: ["ts", "reading_id"],
+});
+```
+
+## Column Types
+
+All 20+ QuestDB column types are supported:
+
+| Builder                     | QuestDB Type    | TypeScript Type | Nullable |
+| --------------------------- | --------------- | --------------- | -------- |
+| `q.boolean()`               | BOOLEAN         | `boolean`       | No       |
+| `q.byte()`                  | BYTE            | `number`        | No       |
+| `q.short()`                 | SHORT           | `number`        | No       |
+| `q.char()`                  | CHAR            | `string`        | Yes      |
+| `q.int()`                   | INT             | `number`        | Yes      |
+| `q.float()`                 | FLOAT           | `number`        | Yes      |
+| `q.long()`                  | LONG            | `bigint`        | Yes      |
+| `q.double()`                | DOUBLE          | `number`        | Yes      |
+| `q.decimal()`               | DECIMAL         | `string`        | Yes      |
+| `q.date()`                  | DATE            | `Date`          | Yes      |
+| `q.timestamp()`             | TIMESTAMP       | `Date`          | Yes      |
+| `q.timestamp.designated()`  | TIMESTAMP       | `Date`          | Yes      |
+| `q.timestamp.ns()`          | TIMESTAMP (ns)  | `bigint`        | Yes      |
+| `q.symbol()`                | SYMBOL          | `string`        | Yes      |
+| `q.varchar()`               | VARCHAR         | `string`        | Yes      |
+| `q.string()`                | STRING          | `string`        | Yes      |
+| `q.uuid()`                  | UUID            | `string`        | Yes      |
+| `q.ipv4()`                  | IPV4            | `string`        | Yes      |
+| `q.binary()`                | BINARY          | `Uint8Array`    | Yes      |
+| `q.long256()`               | LONG256         | `string`        | Yes      |
+| `q.geohash(bits)`           | GEOHASH(Nb)     | `string`        | Yes      |
+| `q.array(elementType)`      | TYPE[]          | `number[]`      | Yes      |
+
+> `boolean`, `byte`, and `short` are the only non-nullable types in QuestDB — they default to `false` / `0` when `NULL`.
+
+### Symbol Options
+
+Symbol columns support advanced options via a chainable builder:
+
+```typescript
+const table = defineTable({
+  name: "sensors",
+  columns: {
+    ts: q.timestamp.designated(),
+    source: q.symbol.options()
+      .capacity(256)    // dictionary capacity
+      .cache()          // enable symbol cache
+      .index(1024)      // create index with block capacity
+      .build(),
+    power_kw: q.double(),
+  },
+});
+```
+
+Available symbol options: `capacity(n)`, `cache()`, `nocache()`, `index()`, `index(blockCapacity)`.
+
+### Geohash
+
+Geohash columns accept a precision in bits (1-60):
+
+```typescript
+q.geohash(30) // 30-bit geohash
+```
+
+### Array
+
+Numeric array columns specify the element type:
+
+```typescript
+q.array("double")  // DOUBLE[]
+q.array("int")     // INT[]
+q.array("float")   // FLOAT[]
+q.array("long")    // LONG[]
+q.array("short")   // SHORT[]
+```
+
+### Nanosecond Timestamps
+
+For nanosecond-precision timestamps (stored as `bigint`):
+
+```typescript
+q.timestamp.ns()
+```
+
+## Runtime Validation
+
+Every column type includes a Zod v4 schema for insert-time validation. For example:
+
+- `byte` validates integers in the range -128 to 127
+- `short` validates integers in the range -32768 to 32767
+- `char` validates strings of max length 1
+- `uuid` validates UUID format
+- `ipv4` validates IPv4 format

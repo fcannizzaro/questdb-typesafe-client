@@ -1,0 +1,115 @@
+---
+title: Client
+description: Configure and use the QuestDB HTTP client.
+---
+
+## Creating a Client
+
+The `QuestDBClient` connects to QuestDB over its HTTP REST API. No native drivers are needed.
+
+```typescript
+import { QuestDBClient } from "@fcannizzaro/questdb-typesafe-client";
+
+const db = new QuestDBClient({
+  host: "localhost",
+  port: 9000,
+});
+```
+
+## Configuration Options
+
+| Option     | Type             | Default       | Description                            |
+| ---------- | ---------------- | ------------- | -------------------------------------- |
+| `host`     | `string`         | `"localhost"` | QuestDB hostname                       |
+| `port`     | `number`         | `9000`        | QuestDB HTTP port                      |
+| `https`    | `boolean`        | `false`       | Use HTTPS                              |
+| `username` | `string`         | —             | Basic auth username                    |
+| `password` | `string`         | —             | Basic auth password                    |
+| `timeout`  | `number`         | `30000`       | Request timeout in milliseconds        |
+| `retries`  | `number`         | `0`           | Retry count for transient errors       |
+| `fetch`    | `typeof fetch`   | global fetch  | Custom fetch implementation            |
+
+### Authentication
+
+```typescript
+const db = new QuestDBClient({
+  host: "questdb.example.com",
+  port: 443,
+  https: true,
+  username: "admin",
+  password: "secret",
+});
+```
+
+### Retries
+
+The client retries on 5xx and network errors with exponential backoff (`100ms * attempt`). 4xx errors are never retried.
+
+```typescript
+const db = new QuestDBClient({
+  host: "localhost",
+  retries: 3, // retry up to 3 times on transient errors
+});
+```
+
+### Custom Fetch
+
+Useful for testing or environments with custom HTTP clients:
+
+```typescript
+const db = new QuestDBClient({
+  host: "localhost",
+  fetch: myCustomFetch,
+});
+```
+
+## Client Methods
+
+### `client.table(def)`
+
+Creates a typed `Table` instance from a table definition. This is the main entry point for queries and DDL.
+
+```typescript
+const energyReadings = defineTable({ /* ... */ });
+const table = db.table(energyReadings);
+```
+
+### `client.exec(sql)`
+
+Execute raw SQL via the `/exec` endpoint:
+
+```typescript
+const result = await db.exec("SELECT * FROM energy_readings LIMIT 10");
+// result: { columns, dataset, count, ... }
+```
+
+### `client.import(tableName, csvData, options?)`
+
+Bulk CSV import via the `/imp` endpoint:
+
+```typescript
+const csv = "ts,source,power_kw\n2026-01-01T00:00:00Z,solar,48.7\n";
+const result = await db.import("energy_readings", csv, {
+  timestamp: "ts",
+  partitionBy: "DAY",
+});
+// result: { rowsImported, rowsRejected, ... }
+```
+
+Import options:
+
+| Option        | Type                       | Description                |
+| ------------- | -------------------------- | -------------------------- |
+| `overwrite`   | `boolean`                  | Overwrite existing table   |
+| `durable`     | `boolean`                  | Durable import             |
+| `atomicity`   | `"relaxed" \| "strict"`    | Atomicity level            |
+| `timestamp`   | `string`                   | Timestamp column name      |
+| `partitionBy` | `PartitionBy`              | Partition strategy         |
+
+### `client.ping()`
+
+Health check — returns `true` if QuestDB is reachable:
+
+```typescript
+const healthy = await db.ping();
+```

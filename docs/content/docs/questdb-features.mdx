@@ -1,0 +1,169 @@
+---
+title: QuestDB Features
+description: Time-series specific features — SAMPLE BY, LATEST ON, temporal JOINs, and more.
+---
+
+## SAMPLE BY
+
+Time-series downsampling — aggregate data into time buckets:
+
+```typescript
+// Basic sampling
+table.select().sampleBy("1h")
+
+// With FILL strategy
+table.select().sampleBy("5m", "PREV")
+
+// Multiple fill strategies (one per selected column)
+table.select().sampleBy("1h", ["NULL", "PREV", "LINEAR"])
+
+// Fill with constant value
+table.select().sampleBy("1h", [{ constant: 0 }])
+
+// Alignment
+table.select().sampleBy("1d", "NULL", "CALENDAR")
+table.select().sampleBy("1d", "NULL", "FIRST OBSERVATION")
+```
+
+### Fill Strategies
+
+| Strategy         | Description                        |
+| ---------------- | ---------------------------------- |
+| `"NONE"`         | No fill                            |
+| `"NULL"`         | Fill with NULL                     |
+| `"PREV"`         | Carry forward previous value       |
+| `"LINEAR"`       | Linear interpolation               |
+| `{ constant: v }`| Fill with a constant value         |
+
+### Alignment
+
+| Value                  | Description                                   |
+| ---------------------- | --------------------------------------------- |
+| `"CALENDAR"`           | Align buckets to calendar boundaries          |
+| `"FIRST OBSERVATION"`  | Align to the first observed timestamp         |
+
+## LATEST ON
+
+Get the latest record per partition key. Automatically uses the designated timestamp column.
+
+```typescript
+// Latest per source
+table.select().latestOn("source")
+
+// Multiple partition keys
+table.select().latestOn("source", "reading")
+```
+
+Example SQL output:
+```sql
+SELECT * FROM energy_readings LATEST ON ts PARTITION BY source
+```
+
+## Temporal JOINs
+
+QuestDB supports time-aware JOINs that match rows by timestamp proximity.
+
+### ASOF JOIN
+
+Matches each left row with the closest preceding (or equal) right row by timestamp:
+
+```typescript
+const meterRates = defineTable({
+  name: "meter_rates",
+  columns: {
+    ts: q.timestamp.designated(),
+    source: q.symbol(),
+    rate_kwh: q.double(),
+    cost: q.double(),
+  },
+  partitionBy: "DAY",
+});
+
+const ratesTable = db.table(meterRates);
+
+const rows = await table
+  .select()
+  .asofJoin(ratesTable, "r", (left, right) =>
+    and(left.source.ref(), right.source.ref())
+  )
+  .execute();
+// Result type merges both tables: { ts, source, power_kw, ..., "r.rate_kwh", "r.cost", ... }
+```
+
+### LT JOIN
+
+Like ASOF JOIN but matches strictly less than (not equal):
+
+```typescript
+table.select().ltJoin(ratesTable, "r", (left, right) =>
+  and(left.source.ref(), right.source.ref()),
+  "5s" // optional tolerance
+)
+```
+
+### SPLICE JOIN
+
+A full ASOF JOIN that includes all records from both sides:
+
+```typescript
+table.select().spliceJoin(ratesTable, "r", (left, right) =>
+  and(left.source.ref(), right.source.ref())
+)
+```
+
+### Standard JOINs
+
+Standard SQL JOINs are also supported:
+
+```typescript
+// INNER JOIN
+table.select().innerJoin(other, "o", (left, right) =>
+  and(left.id.ref(), right.id.ref())
+)
+
+// LEFT JOIN (right columns become nullable)
+table.select().leftJoin(other, "o", (left, right) =>
+  and(left.id.ref(), right.id.ref())
+)
+
+// CROSS JOIN
+table.select().crossJoin(other, "o")
+```
+
+### Join Result Types
+
+Join results are automatically typed with alias-prefixed column names:
+
+| Join Type      | Right Columns Nullable? |
+| -------------- | ----------------------- |
+| `asofJoin`     | Yes                     |
+| `ltJoin`       | Yes                     |
+| `spliceJoin`   | Yes                     |
+| `leftJoin`     | Yes                     |
+| `innerJoin`    | No                      |
+| `crossJoin`    | No                      |
+
+## WHERE timestamp IN
+
+QuestDB's interval shorthand for filtering by timestamp:
+
+```typescript
+// All of 2026
+table.select().whereTimestamp("ts", "2026")
+
+// 3-month range starting January 2026
+table.select().whereTimestamp("ts", "2026-01;3M")
+```
+
+Generates: `WHERE ts IN '2026-01;3M'`
+
+## Regex Match
+
+QuestDB supports Java regex matching with the `~` operator:
+
+```typescript
+table.select()
+  .where((c) => c.source.matches("^solar.*"))
+```
+
+Generates: `WHERE source ~ '^solar.*'`

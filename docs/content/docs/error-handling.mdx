@@ -1,0 +1,92 @@
+---
+title: Error Handling
+description: Handle QuestDB errors, connection failures, and retries.
+---
+
+## Error Classes
+
+The library provides two custom error classes:
+
+### QuestDBError
+
+Thrown when QuestDB returns an HTTP error (4xx/5xx):
+
+```typescript
+import { QuestDBError } from "@fcannizzaro/questdb-typesafe-client";
+
+try {
+  await table.select().execute();
+} catch (error) {
+  if (error instanceof QuestDBError) {
+    error.status;          // HTTP status code (e.g. 400)
+    error.questdbMessage;  // QuestDB error message
+    error.position;        // position in SQL where error occurred
+    error.sql;             // the SQL that caused the error
+  }
+}
+```
+
+### QuestDBConnectionError
+
+Thrown on network failures, timeouts, or unreachable servers:
+
+```typescript
+import { QuestDBConnectionError } from "@fcannizzaro/questdb-typesafe-client";
+
+try {
+  await db.ping();
+} catch (error) {
+  if (error instanceof QuestDBConnectionError) {
+    error.cause;  // the underlying Error
+  }
+}
+```
+
+## Retry Behavior
+
+Configure automatic retries on the client:
+
+```typescript
+const db = new QuestDBClient({
+  host: "localhost",
+  retries: 3,       // retry up to 3 times
+  timeout: 30_000,  // 30 second timeout
+});
+```
+
+### Retry Rules
+
+| Error Type          | Retried? | Reason                                      |
+| ------------------- | -------- | ------------------------------------------- |
+| 5xx server errors   | Yes      | Transient — server may recover              |
+| Network errors      | Yes      | Transient — connection may be restored      |
+| Timeout errors      | Yes      | Transient — server may be under load        |
+| 4xx client errors   | No       | Permanent — bad request, fix the query      |
+
+Retries use **exponential backoff**: `100ms * attempt` (100ms, 200ms, 300ms, ...).
+
+## Validation Errors
+
+Insert operations validate data against the column's Zod schema before generating SQL. Validation failures throw a standard `Error`:
+
+```typescript
+const table = db.table(
+  defineTable({
+    name: "t",
+    columns: {
+      ts: q.timestamp.designated(),
+      value: q.byte(), // validates: integer, -128 to 127
+    },
+  })
+);
+
+// Throws Error: value out of range
+await table.insert({ value: 999 }).execute();
+```
+
+## Builder Errors
+
+Some builder operations throw errors for invalid usage:
+
+- **BINARY insert** — binary columns cannot be inserted via SQL; use `client.import()` instead
+- **LATEST ON without designated timestamp** — throws if the table has no designated timestamp column

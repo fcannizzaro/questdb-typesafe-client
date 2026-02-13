@@ -1,0 +1,81 @@
+---
+title: Expressions & Functions
+description: Logical combinators, aggregate functions, and raw SQL expressions.
+---
+
+## Logical Combinators
+
+Combine WHERE conditions with `and`, `or`, and `not`:
+
+```typescript
+import { and, or, not } from "@fcannizzaro/questdb-typesafe-client";
+
+// AND
+table.select().where((c) =>
+  and(c.source.eq("solar"), c.power_kw.gt(50))
+)
+
+// OR
+table.select().where((c) =>
+  or(c.source.eq("solar"), c.source.eq("wind"))
+)
+
+// NOT
+table.select().where((c) =>
+  not(c.meter_active.eq(false))
+)
+
+// Nested
+table.select().where((c) =>
+  and(
+    or(c.source.eq("solar"), c.source.eq("wind")),
+    c.power_kw.gt(100),
+  )
+)
+```
+
+## Aggregate Functions
+
+The `fn` namespace provides typed aggregate function helpers. All accept an optional `alias` parameter.
+
+```typescript
+import { fn } from "@fcannizzaro/questdb-typesafe-client";
+
+table.select()
+  .addExpr(fn.count(undefined, "total"))
+  .addExpr(fn.avg("power_kw", "avg_power"))
+  .addExpr(fn.sum("energy_kwh", "total_energy"))
+  .groupBy("source")
+  .execute();
+```
+
+### Available Functions
+
+| Helper                         | SQL                      | Notes                    |
+| ------------------------------ | ------------------------ | ------------------------ |
+| `fn.count()`                   | `COUNT(*)`               |                          |
+| `fn.count("col")`              | `COUNT(col)`             |                          |
+| `fn.count("col", "alias")`     | `COUNT(col) AS alias`    |                          |
+| `fn.sum("col")`                | `SUM(col)`               |                          |
+| `fn.avg("col")`                | `AVG(col)`               |                          |
+| `fn.min("col")`                | `MIN(col)`               |                          |
+| `fn.max("col")`                | `MAX(col)`               |                          |
+| `fn.first("col")`              | `FIRST(col)`             | QuestDB-specific         |
+| `fn.last("col")`               | `LAST(col)`              | QuestDB-specific         |
+| `fn.countDistinct("col")`      | `COUNT_DISTINCT(col)`    |                          |
+| `fn.ksum("col")`               | `KSUM(col)`              | Kahan summation          |
+| `fn.nsum("col")`               | `NSUM(col)`              | Neumaier summation       |
+
+## Raw SQL Expressions
+
+For expressions not covered by the builders, use `raw()`:
+
+```typescript
+import { raw } from "@fcannizzaro/questdb-typesafe-client";
+
+// In SELECT
+table.select().addExpr(raw("power_kw * energy_kwh"), "total_output")
+
+// In WHERE
+table.select().where(() => raw("power_kw * energy_kwh > 10000"))
+```

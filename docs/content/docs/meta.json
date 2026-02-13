@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "---Library---",
+    "index",
+    "---Reference---",
+    "client",
+    "schema",
+    "queries",
+    "questdb-features",
+    "ddl",
+    "expressions",
+    "type-inference",
+    "error-handling"
+  ]
+}

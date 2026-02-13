@@ -1,0 +1,138 @@
+---
+title: Getting Started
+description: Install and set up questdb-typesafe-client in your TypeScript project.
+---
+
+## Overview
+
+`@fcannizzaro/questdb-typesafe-client` is a type-safe QuestDB client for TypeScript. It provides schema definitions, fluent query builders, and DDL operations with full type inference — all over QuestDB's HTTP REST API.
+
+### Key Features
+
+- **Type-safe schema** — define tables with `defineTable` and get full TypeScript inference for rows, inserts, and updates
+- **Query builders** — fluent, chainable SELECT / INSERT / UPDATE with typed results and partition deletion
+- **QuestDB-native** — first-class support for `SAMPLE BY`, `LATEST ON`, `ASOF JOIN`, `LT JOIN`, `SPLICE JOIN`, designated timestamps, partitioning, WAL, and dedup keys
+- **DDL builders** — CREATE TABLE, ALTER TABLE, DROP, TRUNCATE, DESCRIBE with all QuestDB options
+- **20+ column types** — every QuestDB type including `SYMBOL`, `GEOHASH`, `UUID`, `IPV4`, and `ARRAY`
+- **Runtime validation** — Zod v4 schemas on every column for insert-time validation
+- **Aggregate helpers** — `count`, `sum`, `avg`, `min`, `max`, `first`, `last`, `countDistinct`, `ksum`, `nsum`
+
+## Installation
+
+```bash tab="bun"
+bun add @fcannizzaro/questdb-typesafe-client zod
+```
+
+```bash tab="npm"
+npm install @fcannizzaro/questdb-typesafe-client zod
+```
+
+```bash tab="pnpm"
+pnpm add @fcannizzaro/questdb-typesafe-client zod
+```
+
+> Requires `zod >= 4.0.0` and `typescript >= 5.8` (beta).
+
+## Quick Start
+
+```typescript
+import {
+  QuestDBClient,
+  defineTable,
+  q,
+  and,
+} from "@fcannizzaro/questdb-typesafe-client";
+
+// 1. Define the table schema
+const energyReadings = defineTable({
+  name: "energy_readings",
+  columns: {
+    ts: q.timestamp.designated(),
+    source: q.symbol(),
+    reading: q.symbol(),
+    power_kw: q.double(),
+    energy_kwh: q.double(),
+    meter_active: q.boolean(),
+  },
+  partitionBy: "DAY",
+  wal: true,
+});
+
+// 2. Connect to QuestDB and bind the table
+const db = new QuestDBClient({ host: "localhost", port: 9000 });
+const readings = db.table(energyReadings);
+
+// 3. Create the table
+await readings.ddl().create().ifNotExists().execute();
+
+// 4. Insert — single row
+await readings
+  .insert({
+    meter_active: true,
+    source: "solar",
+    reading: "produced",
+    power_kw: 48.7,
+    energy_kwh: 312.5,
+  })
+  .execute();
+
+// 4b. Insert — batch
+await readings
+  .insert([
+    { meter_active: true, source: "wind", reading: "produced", power_kw: 120.3, energy_kwh: 890.1 },
+    { meter_active: true, source: "solar", reading: "consumed", power_kw: 5.2, energy_kwh: 41.6 },
+    { meter_active: false, source: "grid", reading: "consumed", power_kw: 0.0, energy_kwh: 0.0 },
+  ])
+  .execute();
+
+// 5. Select — filtered query
+const rows = await readings
+  .select("source", "power_kw", "energy_kwh")
+  .where((c) => and(c.source.eq("solar"), c.power_kw.gt(50)))
+  .orderBy("power_kw", "DESC")
+  .limit(10)
+  .execute();
+// rows is typed as { source: string | null; power_kw: number | null; energy_kwh: number | null }[]
+
+// 6. Select — QuestDB-specific: LATEST ON
+const latest = await readings
+  .select()
+  .latestOn("source")
+  .execute();
+
+// 7. Select — QuestDB-specific: SAMPLE BY
+const sampled = await readings
+  .select()
+  .sampleBy("1h", "PREV")
+  .execute();
+
+// 8. Update
+await readings
+  .update()
+  .set({ power_kw: 52.3 })
+  .where((c) => c.source.eq("solar"))
+  .execute();
+
+// 9. Delete partition
+await readings.deletePartition("2026-01-15");
+
+// 10. SQL preview with .toSQL()
+const sql = readings
+  .select("source", "power_kw")
+  .where((c) => c.power_kw.gt(100))
+  .orderBy("power_kw", "DESC")
+  .limit(5)
+  .toSQL();
+
+// 11. Cleanup — drop table
+await readings.ddl().drop(true);
+```
+
+## What's Next?
+
+<Cards>
+  <Card title="Client" href="/docs/client" />
+  <Card title="Schema Definition" href="/docs/schema" />
+  <Card title="Query Builders" href="/docs/queries" />
+  <Card title="QuestDB Features" href="/docs/questdb-features" />
+</Cards>

@@ -1,0 +1,23 @@
+{
+  "name": "basic-usage",
+  "private": true,
+  "type": "module",
+  "module": "index.ts",
+  "scripts": {
+    "takedown": "docker compose down",
+    "dev": "docker compose up -d && bun index.ts",
+    "lint": "tsc --noEmit",
+    "test": "bun test",
+    "fmt": "oxfmt"
+  },
+  "dependencies": {
+    "@fcannizzaro/questdb-typesafe-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^25.2.3"
+  },
+  "peerDependencies": {
+    "typescript": "beta"
+  }
+}

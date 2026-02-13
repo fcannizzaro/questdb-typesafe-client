@@ -1,0 +1,111 @@
+---
+title: Type Inference
+description: Extract TypeScript types from table definitions.
+---
+
+## Overview
+
+The library exports utility types that extract row types from table definitions. These are useful for typing function parameters, API responses, and more.
+
+```typescript
+import type {
+  InferRow,
+  InferInsertRow,
+  InferUpdateRow,
+} from "@fcannizzaro/questdb-typesafe-client";
+```
+
+## InferRow
+
+The full row type as returned by SELECT queries:
+
+```typescript
+const sensors = defineTable({
+  name: "sensors",
+  columns: {
+    ts: q.timestamp.designated(),
+    source: q.symbol(),
+    power_kw: q.double(),
+    meter_active: q.boolean(),
+  },
+  partitionBy: "DAY",
+});
+
+type Row = InferRow<typeof sensors>;
+// {
+//   ts: Date | null;
+//   source: string | null;
+//   power_kw: number | null;
+//   meter_active: boolean;       // non-nullable
+// }
+```
+
+### Nullability Rules (Read)
+
+| Type                           | Nullable? | Reason                                  |
+| ------------------------------ | --------- | --------------------------------------- |
+| `boolean`, `byte`, `short`     | No        | QuestDB defaults them to `false` / `0`  |
+| All other types                | Yes       | Can be `NULL` in QuestDB               |
+
+## InferInsertRow
+
+The row type accepted by INSERT operations:
+
+```typescript
+type InsertRow = InferInsertRow<typeof sensors>;
+// {
+//   meter_active: boolean;          // required (non-nullable)
+//   ts?: Date | null | undefined;   // optional (designated timestamp)
+//   source?: string | null;         // optional (nullable)
+//   power_kw?: number | null;       // optional (nullable)
+// }
+```
+
+### Insert Rules
+
+- **Non-nullable types** (`boolean`, `byte`, `short`) are **required**
+- **Designated timestamp** is **optional** (server auto-assigns current time)
+- **All nullable columns** are **optional** and accept `T | null | undefined`
+- `undefined` values are excluded from the generated SQL
+
+## InferUpdateRow
+
+The row type accepted by UPDATE `.set()`:
+
+```typescript
+type UpdateRow = InferUpdateRow<typeof sensors>;
+// {
+//   source?: string | null;
+//   power_kw?: number | null;
+//   meter_active?: boolean;
+// }
+```
+
+### Update Rules
+
+- **Designated timestamp is excluded** — QuestDB does not allow updating the designated timestamp
+- All other columns are `Partial` (optional)
+
+## PickColumns
+
+Narrow a row type to specific columns:
+
+```typescript
+import type { PickColumns } from "@fcannizzaro/questdb-typesafe-client";
+
+type Subset = PickColumns<typeof sensors, "source" | "power_kw">;
+// { source: string | null; power_kw: number | null }
+```
+
+## JoinRow
+
+Merge two row types with alias-prefixed keys (used internally by join builders):
+
+```typescript
+import type { JoinRow } from "@fcannizzaro/questdb-typesafe-client";
+
+type Joined = JoinRow<LeftRow, RightRow, "q", true>;
+// LeftRow & { "q.col1": Type | null; "q.col2": Type | null; ... }
+```
+
+The fourth parameter controls whether right-side columns are nullable (`true` for ASOF/LT/LEFT/SPLICE joins, `false` for INNER/CROSS joins).

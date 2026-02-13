@@ -1,0 +1,136 @@
+---
+title: DDL Operations
+description: CREATE, ALTER, DROP, TRUNCATE, and DESCRIBE tables.
+---
+
+## Overview
+
+DDL operations are accessed via `table.ddl()`:
+
+```typescript
+const table = db.table(energyReadings);
+const ddl = table.ddl();
+```
+
+## CREATE TABLE
+
+```typescript
+await table.ddl().create().ifNotExists().execute();
+```
+
+Generates SQL including all schema options:
+
+```sql
+CREATE TABLE IF NOT EXISTS energy_readings (
+  ts TIMESTAMP,
+  source SYMBOL CAPACITY 256 CACHE INDEX,
+  reading SYMBOL CAPACITY 256 CACHE INDEX,
+  power_kw DOUBLE,
+  energy_kwh DOUBLE,
+  meter_active BOOLEAN
+) timestamp(ts) PARTITION BY DAY WAL
+  WITH maxUncommittedRows=50000, o3MaxLag=1s
+```
+
+The `CreateBuilder` automatically includes:
+- All column types with symbol options (capacity, cache, index)
+- Designated timestamp
+- Partition strategy
+- WAL / BYPASS WAL
+- Dedup upsert keys
+- `maxUncommittedRows` and `o3MaxLag` parameters
+- TTL (applied as a separate `ALTER TABLE ... SET PARAM ttl` after creation)
+
+## ALTER TABLE
+
+The `AlterBuilder` accumulates operations and executes them sequentially (QuestDB does not support compound ALTER statements).
+
+```typescript
+await table.ddl().alter()
+  .addColumn("notes", q.varchar())
+  .dropColumn("old_col")
+  .renameColumn("qty", "quantity")
+  .execute();
+```
+
+### Available Operations
+
+| Method                          | SQL                                              |
+| ------------------------------- | ------------------------------------------------ |
+| `.addColumn(name, col)`         | `ALTER TABLE t ADD COLUMN name TYPE`             |
+| `.dropColumn(name)`             | `ALTER TABLE t DROP COLUMN name`                 |
+| `.renameColumn(from, to)`       | `ALTER TABLE t RENAME COLUMN from TO to`         |
+| `.setTTL(interval)`             | `ALTER TABLE t SET PARAM ttl = 'interval'`       |
+| `.setMaxUncommittedRows(n)`     | `ALTER TABLE t SET PARAM maxUncommittedRows = n` |
+| `.setO3MaxLag(interval)`        | `ALTER TABLE t SET PARAM o3MaxLag = 'interval'`  |
+| `.dropPartition(name)`          | `ALTER TABLE t DROP PARTITION LIST 'name'`       |
+| `.detachPartition(name)`        | `ALTER TABLE t DETACH PARTITION LIST 'name'`     |
+| `.attachPartition(name)`        | `ALTER TABLE t ATTACH PARTITION LIST 'name'`     |
+| `.squashPartitions()`           | `ALTER TABLE t SQUASH PARTITIONS`                |
+| `.resumeWal()`                  | `ALTER TABLE t RESUME WAL`                       |
+
+### Preview SQL
+
+`toSQL()` returns an array of SQL strings (one per operation):
+
+```typescript
+const statements = table.ddl().alter()
+  .addColumn("notes", q.varchar())
+  .setTTL("30d")
+  .toSQL();
+// ["ALTER TABLE energy_readings ADD COLUMN notes VARCHAR",
+//  "ALTER TABLE energy_readings SET PARAM ttl = '30d'"]
+```
+
+## DROP TABLE
+
+```typescript
+// DROP TABLE energy_readings
+await table.ddl().drop();
+
+// DROP TABLE IF EXISTS energy_readings
+await table.ddl().drop(true);
+```
+
+## TRUNCATE TABLE
+
+```typescript
+await table.ddl().truncate();
+```
+
+## DESCRIBE TABLE
+
+Returns column metadata:
+
+```typescript
+const columns = await table.ddl().describe();
+// columns: ColumnInfo[]
+```
+
+Each `ColumnInfo` contains:
+
+| Field                | Type      | Description                      |
+| -------------------- | --------- | -------------------------------- |
+| `column`             | `string`  | Column name                      |
+| `type`               | `string`  | QuestDB type name                |
+| `indexed`            | `boolean` | Has an index                     |
+| `indexBlockCapacity`  | `number`  | Index block capacity             |
+| `symbolCached`       | `boolean` | Symbol cache enabled             |
+| `symbolCapacity`     | `number`  | Symbol dictionary capacity       |
+| `designated`         | `boolean` | Is the designated timestamp      |
+| `upsertKey`          | `boolean` | Is a dedup upsert key           |
+
+## Check Existence
+
+```typescript
+const exists = await table.ddl().exists();
+// exists: boolean
+```
+
+## Raw SQL
+
+For queries not covered by the builders, use the escape hatch:
+
+```typescript
+const result = await table.raw("SELECT count() FROM energy_readings");
+```
