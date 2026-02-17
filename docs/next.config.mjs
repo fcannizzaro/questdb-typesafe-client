@@ -10,7 +10,6 @@ const config = {
   images: {
     unoptimized: true,
   },
-  basePath: process.env.GITHUB_ACTIONS ? "/questdb-typesafe-client" : undefined
 };
 
 export default withMDX(config);
