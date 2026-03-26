@@ -6,12 +6,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fcannizzaro/questdb-typesafe.git",
+    "url": "https://github.com/fcannizzaro/questdb-typesafe-client.git",
     "directory": "packages/questdb-typesafe-client"
   },
-  "homepage": "https://github.com/fcannizzaro/questdb-typesafe#readme",
+  "homepage": "https://github.com/fcannizzaro/questdb-typesafe-client#readme",
   "bugs": {
-    "url": "https://github.com/fcannizzaro/questdb-typesafe/issues"
+    "url": "https://github.com/fcannizzaro/questdb-typesafe-client/issues"
   },
   "keywords": [
     "questdb",
