@@ -1,13 +1,31 @@
 {
   "name": "@fcannizzaro/questdb-typesafe-client",
   "version": "1.0.0",
+  "description": "Type-safe QuestDB client library for TypeScript",
+  "author": "Francesco Cannizzaro (https://github.com/fcannizzaro)",
+  "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fcannizzaro/questdb-typesafe-client.git",
+    "url": "https://github.com/fcannizzaro/questdb-typesafe.git",
     "directory": "packages/questdb-typesafe-client"
   },
+  "homepage": "https://github.com/fcannizzaro/questdb-typesafe#readme",
+  "bugs": {
+    "url": "https://github.com/fcannizzaro/questdb-typesafe/issues"
+  },
+  "keywords": [
+    "questdb",
+    "typesafe",
+    "typescript",
+    "query-builder",
+    "sql",
+    "timeseries",
+    "database"
+  ],
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "type": "module",
   "main": "./dist/questdb-typesafe-client.umd.cjs",
